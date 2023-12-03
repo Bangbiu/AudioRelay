@@ -2,8 +2,28 @@ import wave
 import os
 import pyaudiowpatch as pyaudio
 from datetime import datetime
+from enum import Enum
 
-p = pyaudio.PyAudio()
+
+class StreamType(Enum):
+    Input = 0
+    Output = 1
+
+
+class LinkType(Enum):
+    Device = "Device..."
+    File = "File..."
+
+
+StreamDesc = {
+    StreamType.Input: "Input",
+    StreamType.Output: "Output",
+}
+
+ChunkRatio = {
+    pyaudio.paInt16: 4
+}
+
 def fill_dev_desc(info):
     info["streamType"] = "Input" if info["maxInputChannels"] > 0 else "Output"
     info["desc"] = "{} Device {}: {}".format(info["streamType"], info["index"],
@@ -47,6 +67,13 @@ def get_default_output_device():
     return get_dev_info(p.get_host_api_info_by_index(0)["defaultOutputDevice"])
 
 
+StreamIter = {
+    StreamType.Input: list_input_device,
+    StreamType.Output: list_output_device,
+    # StreamType.Loopback: listLoopbackDevices
+}
+
+
 class Streamer(object):
     DEF_CHUNK = 2048
     DEF_FORMAT = pyaudio.paInt16
@@ -56,7 +83,7 @@ class Streamer(object):
         self.DEVICE = dev_info["index"]
         self.CHUNK = chunk_size
 
-        if dev_info["streamType"] == "Input":
+        if dev_info["streamType"] == StreamDesc[StreamType.Input]:
             self.CHANNELS = dev_info["maxInputChannels"]
         else:
             self.CHANNELS = dev_info["maxOutputChannels"]
@@ -93,6 +120,7 @@ class WaveCapture(Streamer):
 
     def setpos(self, pos):
         self.stream.setpos(pos)
+
     def load_chunk(self):
         return self.stream.readframes(self.CHUNK)
 
@@ -143,12 +171,12 @@ class WaveRecorder(Streamer):
         self.stream.setnchannels(self.CHANNELS)
 
     def write(self, data):
-        self.written += len(data)
-        '''
-        if self.written / self.RATE >= self.file_len:
+        self.written += len(data) / ChunkRatio[Streamer.DEF_FORMAT]
+
+        if self.written / self.RATE > self.file_len:
             self.open()
             self.written = 0
-        '''
+
         return self.stream.writeframes(data)
 
     @staticmethod
@@ -177,3 +205,6 @@ class OutputPlayer(Streamer):
 
     def write(self, data):
         self.stream.write(data)
+
+
+p = pyaudio.PyAudio()

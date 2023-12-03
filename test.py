@@ -116,7 +116,7 @@ def rediplayer():
 
 def rediplayrecord():
     capture = InputCapture(get_dev_info(19))
-    reader = WaveCapture("loopback_record.wav")
+    reader = WaveCapture("test_audio/loopback_record.wav")
     player = OutputPlayer(defout)
     recorder = WaveRecorder("log/", channels=player.CHANNELS, rate=player.RATE)
 

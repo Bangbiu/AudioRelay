@@ -1,22 +1,10 @@
-import os
-
 import customtkinter as ctk
-from AudioIO import *
 from ConfigLoader import config
 from tkinter import filedialog
-from enum import Enum
+from AudioIO import *
 
 ctk.set_appearance_mode("System")  # Modes: system (default), light, dark
 ctk.set_default_color_theme("blue")  # Themes: blue (default), dark-blue, green
-
-
-class StreamType(Enum):
-    Input = 0
-    Output = 1
-
-class LinkType(Enum):
-    Device = "Device..."
-    File = "File..."
 
 
 class WinDef(Enum):
@@ -28,47 +16,35 @@ class WinDef(Enum):
 
     StartBtnHeight = 30
 
-
-StreamDesc = {
-    StreamType.Input: "Input",
-    StreamType.Output: "Output",
-}
-
-StreamIter = {
-    StreamType.Input: list_input_device,
-    StreamType.Output: list_output_device,
-    #StreamType.Loopback: listLoopbackDevices
-}
-
 StreamCol = {
     StreamType.Input: 0,
     StreamType.Output: 2
 }
 
 
-class App(ctk.CTk):
+
+class MainFrame(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("AudioCap")
+        self.title("AudioRelay")
         self.resizable(False, False)
         self.winSize = [720, 350]
         self.setWinSize()
 
-        self.stage = stage = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        stage.pack(pady=WinDef.StagePadY.value, fill="both", expand=True)
-        stage.grid_columnconfigure(0, weight=1)
+        self.stage = stage = MainStage(self)
 
         self.rules = [RuleFrame(stage, 1)]
         self.placer = RulePlacer(stage)
 
         self.start_btn = StartButton(stage)
 
-        self.data_pool = dict()
-        self.streamers = dict()
-        self.streamers[StreamType.Input] = dict()
-        self.streamers[StreamType.Output] = dict()
-
-        self.running = False
+        def placeHolder(arg1=None, arg2=None, arg3=None):
+            pass
+        # Event
+        self.sender = placeHolder
+        self.poseter = placeHolder
+        self.starter = placeHolder
+        self.stoper = placeHolder
 
     def setWinSize(self):
         self.geometry("{}x{}".format(*self.winSize))
@@ -91,56 +67,30 @@ class App(ctk.CTk):
         self.placer.set_visible(True)
         self.start_btn.set_visible(True)
 
-    def build_pipeline(self):
+    def summerize(self):
         rule: RuleFrame
         for rule in self.rules:
-            #print(rule.label.cget("text"))
-            for strm_type in StreamType:
-                for strm in rule.streams[strm_type]:
-                    # print(strm.streamID)
-                    if not strm.streamID in self.streamers[strm_type]:
-                        self.streamers[strm_type][strm.streamID] = App.create_streamer(strm.streamID)
+            yield rule.summarize()
 
 
     def start(self):
         for rule in self.rules:
             rule.procBar.start()
+        self.send()
+        self.starter()
 
-        self.build_pipeline()
-        print("start")
-        for strm_type in StreamType:
-            for streamer in self.streamers[strm_type].values():
-                print(type(streamer))
-                streamer.start()
-
-        self.summary()
-
-        self.running = True
-
+    def send(self):
+        self.sender(self.summerize())
     def stop(self):
         for rule in self.rules:
             rule.procBar.stop()
-        self.running = False
+        self.stoper()
 
-    def summary(self):
-        for strm_type in StreamType:
-            print(strm_type)
-            for streamer in self.streamers[strm_type].values():
-                print(type(streamer))
-
-    @staticmethod
-    def create_streamer(streamID) -> Streamer:
-        if type(streamID) == int:
-            info = get_dev_info(streamID)
-            if info["streamType"] == StreamDesc[StreamType.Input]:
-                return InputCapture(info)
-            else:
-                return OutputPlayer(info)
-        else:
-            if os.path.isfile(streamID):
-                return WaveCapture(streamID)
-            else:
-                return WaveRecorder(streamID)
+class MainStage(ctk.CTkFrame):
+    def __init__(self, form):
+        super(MainStage, self).__init__(form, corner_radius=0, fg_color="transparent")
+        self.pack(pady=WinDef.StagePadY.value, fill="both", expand=True)
+        self.grid_columnconfigure(0, weight=1)
 
 
 class RulePlacer(ctk.CTkFrame):
@@ -158,7 +108,7 @@ class RulePlacer(ctk.CTkFrame):
         self.bind("<Button-1>", self.add_rule)
 
     def add_rule(self, event):
-        app.add_rule()
+        self.winfo_toplevel().add_rule()
 
     def set_visible(self, visibility):
         self.visible = visibility
@@ -196,6 +146,11 @@ class RuleFrame(ctk.CTkFrame):
             self.streams[type].append(FileStream(self, type, file_path, len(self.streams[type])))
         # maxLen = max(len(self.inputDevices), len(self.outputDevices))
 
+    def summarize(self):
+        for strm_type in StreamType:
+            for strm in self.streams[strm_type]:
+                yield self.label.cget("text"), strm_type, strm.link_type, strm.streamID
+
 
 class StreamPlacer(ctk.CTkOptionMenu):
     def __init__(self, master, type: StreamType):
@@ -215,7 +170,7 @@ class StreamPlacer(ctk.CTkOptionMenu):
         self.row += 1
         self.grid(row=self.row, column=StreamCol[self.type], padx=20, pady=10)
         self.set("Add {} Streamer...".format(StreamDesc[self.type]))
-        app.updateWinSize()
+        self.winfo_toplevel().updateWinSize()
 
 
 class FileStream(ctk.CTkFrame):
@@ -224,9 +179,12 @@ class FileStream(ctk.CTkFrame):
                                          corner_radius=20
                                          )
         self.type = type
-        self.path = self.streamID = path
+        self.link_type = LinkType.File
+        self.path = path
+        self.streamID = "{}:{}".format(index, path)
         self.grid(row=index, column=StreamCol[type], padx=20, pady=10)
         self.playing = False
+        self.pos = 0
         self.build()
 
     def build(self):
@@ -254,14 +212,15 @@ class FileStream(ctk.CTkFrame):
         self.playing = not self.playing
         self.ctrl_btn.configure(text="||" if self.playing else "▶")
 
-
 class DeviceMenu(ctk.CTkOptionMenu):
+
     def __init__(self, master, type, index=0, ignoreIndices=[]):
         super(DeviceMenu, self).__init__(master, height=40, width=250,
                                          values=[], corner_radius=20,
                                          command=self.update_seleted_device)
         self.ignoreIndices = ignoreIndices
         self.type = type
+        self.link_type = LinkType.Device
         self.configure(dynamic_resizing=False)
         self.grid(row=index, column=StreamCol[type], padx=20, pady=10)
         self.update_device_list()
@@ -310,10 +269,10 @@ class StartButton(ctk.CTkButton):
 
         if self.running:
             self.configure(fg_color="red", text="■", hover_color="red4")
-            app.start()
+            self.winfo_toplevel().start()
         else:
             self.configure(fg_color="#3B8ED0", text="▶", hover_color="#1F6AA5")
-            app.stop()
+            self.winfo_toplevel().stop()
 
     def set_visible(self, visibility):
         self.visible = visibility
@@ -324,8 +283,7 @@ class StartButton(ctk.CTkButton):
 
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    pass
 """
 while True:
     app.update()
